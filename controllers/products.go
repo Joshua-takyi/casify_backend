@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joshua/casify/model"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -17,12 +18,20 @@ const (
 	invalidBody        = "invalid request body"
 	failedToAddProduct = "Failed to add product"
 	productAdded       = "Product added successfully"
+	productNotFound    = "Product not found"
+	productUpdated     = "Product updated successfully"
+	productDeleted     = "Product deleted successfully"
+	productsNotDeleted = "Failed to delete products"
+)
+const (
+	accessControlAllowOrigin  = "Access-Control-Allow-Origin"
+	accessControlAllowMethods = "Access-Control-Allow-Methods"
 )
 
 func AddProduct(ctx *gin.Context) {
 	// Set CORS headers
-	ctx.Header("Access-Control-Allow-Origin", "*")
-	ctx.Header("Access-Control-Allow-Methods", "POST")
+	ctx.Header(accessControlAllowOrigin, "*")
+	ctx.Header(accessControlAllowMethods, "POST")
 
 	inputVals := model.Product{}
 	if err := ctx.ShouldBindJSON(&inputVals); err != nil {
@@ -114,4 +123,146 @@ func validateStringSlice(slice []string, fieldName string) error {
 		}
 	}
 	return nil
+}
+
+func GetProducts(ctx *gin.Context) {
+	ctx.Header(accessControlAllowOrigin, "*")
+	ctx.Header(accessControlAllowMethods, "GET")
+	collection := client.Database(dbName).Collection(colName)
+
+	cursor, err := collection.Find(context.Background(), bson.M{})
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Failed to get products",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	var products []model.Product
+
+	if err := cursor.All(context.Background(), &products); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Failed to get products",
+			"error":   err.Error(),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"data": products,
+	})
+}
+
+func GetById(ctx *gin.Context) {
+	ctx.Header(accessControlAllowOrigin, "*")
+	ctx.Header(accessControlAllowMethods, "GET")
+	idParam := ctx.Param("id")
+	id, err := primitive.ObjectIDFromHex(idParam)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": invalidBody,
+			"error":   err.Error(),
+		})
+		return
+	}
+	filter := bson.M{"_id": id}
+
+	var product model.Product
+
+	collection := client.Database(dbName).Collection(colName)
+
+	if err := collection.FindOne(context.Background(), filter).Decode(&product); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": productNotFound,
+			"error":   err.Error(),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"data": product,
+	})
+}
+
+func DeleteProduct(ctx *gin.Context) {
+	ctx.Header(accessControlAllowOrigin, "*")
+	ctx.Header(accessControlAllowMethods, "DELETE")
+
+	idParam := ctx.Param("id")
+	id, err := primitive.ObjectIDFromHex(idParam)
+
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": invalidBody,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	var product model.Product
+	filter := bson.M{"_id": id}
+	collection := client.Database(dbName).Collection(colName)
+
+	if err := collection.FindOneAndDelete(context.Background(), filter).Decode(&product); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": productNotFound,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": productDeleted,
+	})
+}
+
+func UpdateProduct(ctx *gin.Context) {
+	ctx.Header(accessControlAllowOrigin, "*")
+	ctx.Header(accessControlAllowMethods, "PUT")
+	idParam := ctx.Param("id")
+	id, err := primitive.ObjectIDFromHex(idParam)
+
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": invalidBody,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	filter := bson.M{"_id": id}
+	update := bson.M{"$set": ctx.Request.Body}
+
+	var product model.Product
+
+	collection := client.Database(dbName).Collection(colName)
+
+	if err := collection.FindOneAndUpdate(context.Background(), filter, update).Decode(&product); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": productNotFound,
+			"error":   err.Error(),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": productUpdated,
+		"data":    product,
+	})
+}
+
+func DeleteManyProducts(ctx *gin.Context) {
+	ctx.Header(accessControlAllowOrigin, "*")
+	ctx.Header(accessControlAllowMethods, "DELETE")
+	collection := client.Database(dbName).Collection(colName)
+	_, err := collection.DeleteMany(context.Background(), bson.M{})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"message": productsNotDeleted,
+			"error":   err.Error(),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": productsNotDeleted,
+	})
 }

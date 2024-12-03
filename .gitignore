@@ -1,0 +1,51 @@
+# Environment files
+*.env
+*.env.local
+
+# Go build artifacts
+bin/
+*.exe
+*.out
+*.test
+
+# Go mod and sum files (optional: you can choose to keep these)
+# If you want to commit your `go.mod` and `go.sum`, leave these out
+# go.sum can be important for deterministic builds, so consider not ignoring it
+# go.sum
+# go.mod
+
+# Dependency directories
+vendor/
+
+# Editor/IDE configurations
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.iml
+
+# OS-specific files
+.DS_Store        # MacOS
+Thumbs.db         # Windows
+
+# Backup and temporary files
+*.swp             # Vim swap files
+*.bak             # Backup files
+*.tmp             # Temporary files
+*.pid             # Process ID files
+
+# Log files
+*.log
+
+# Coverage files
+*.cov
+.coverage
+
+# Go test binary (optional: depending on how you run your tests)
+test/
+
+# Go tooling (Golangci-lint, etc.)
+.golangci.yml
+
+# Node
+node_modules/

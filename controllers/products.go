@@ -13,13 +13,21 @@ import (
 )
 
 const colName = "products"
-const invalidBody = "invalid request body"
+const (
+	invalidBody        = "invalid request body"
+	failedToAddProduct = "Failed to add product"
+	productAdded       = "Product added successfully"
+)
 
 func AddProduct(ctx *gin.Context) {
+	// Set CORS headers
+	ctx.Header("Access-Control-Allow-Origin", "*")
+	ctx.Header("Access-Control-Allow-Methods", "POST")
+
 	inputVals := model.Product{}
 	if err := ctx.ShouldBindJSON(&inputVals); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"message": invalidCredentials,
+			"message": invalidBody,
 			"error":   err.Error(),
 		})
 		return
@@ -39,29 +47,38 @@ func AddProduct(ctx *gin.Context) {
 	inputVals.Id = primitive.NewObjectID()
 	inputVals.TimeStamp.CreatedAt = time.Now()
 	inputVals.TimeStamp.UpdatedAt = time.Now()
-	inputVals.Ratings = 0
-	inputVals.Comments = nil
-	inputVals.Discount = 0
+
+	// Set default values if not provided
+	if inputVals.Comments == nil {
+		inputVals.Comments = []string{}
+	}
+	if inputVals.Rating == 0 {
+		inputVals.Rating = 0.0
+	}
+	if inputVals.Discount == 0 {
+		inputVals.Discount = 0.0
+	}
 
 	collection := client.Database(dbName).Collection(colName)
 	_, err := collection.InsertOne(context.Background(), inputVals)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"message": "Failed to add product",
+			"message": failedToAddProduct,
 			"error":   err.Error(),
 		})
 		return
 	}
 
 	ctx.JSON(http.StatusCreated, gin.H{
-		"message": "Product added successfully",
+		"message":   productAdded,
+		"productId": inputVals.Id,
 	})
 }
 
 func validateProductInput(p model.Product) error {
 	// Check required fields
 	if p.Title == "" || p.Description == "" || p.Price == 0 ||
-		p.Images == nil || p.Details == "" || p.Color == "" {
+		p.Images == nil || p.Details.Details == nil || p.Color == "" {
 		return errors.New("all fields are required")
 	}
 
@@ -71,7 +88,7 @@ func validateProductInput(p model.Product) error {
 	}
 
 	// Validate ratings
-	if p.Ratings < 0 || p.Ratings > 5 {
+	if p.Rating < 0 || p.Rating > 5 {
 		return errors.New("ratings must be between 0 and 5")
 	}
 
@@ -83,13 +100,6 @@ func validateProductInput(p model.Product) error {
 	// Validate images
 	if err := validateStringSlice(p.Images, "images"); err != nil {
 		return err
-	}
-
-	// validate image types
-	for _, img := range p.Images {
-		if img != "image/jpeg" && img != "image/png" {
-			return errors.New("images must be of type jpeg or png")
-		}
 	}
 
 	return nil

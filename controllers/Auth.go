@@ -4,9 +4,11 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/joshua/casify/helpers"
 	"github.com/joshua/casify/model"
 	"go.mongodb.org/mongo-driver/bson"
@@ -24,7 +26,27 @@ func RegisterClient(ctx *gin.Context) {
 		})
 		return
 	}
+	// check if user exists
+	collection := Client.Database(dbName).Collection(collectionName)
 
+	filter := bson.M{"email": inputVal.Email}
+	var existingUser model.User
+	err := collection.FindOne(context.Background(), filter).Decode(&existingUser)
+	if err == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": "User already exists",
+			"error":   "User already exists",
+		})
+		return
+	}
+	if err != mongo.ErrNoDocuments {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"message": "Failed to check existing user",
+			"error":   err.Error(),
+		})
+		return
+	}
+	// hash password
 	password := inputVal.Password
 	hashedPassword, err := helpers.HashPassword(password)
 	if err != nil {
@@ -40,7 +62,7 @@ func RegisterClient(ctx *gin.Context) {
 	inputVal.TimeStamp.UpdatedAt = time.Now()
 	inputVal.Role = "user"
 
-	collection := client.Database(dbName).Collection(collectionName)
+	// collection := Client.Database(dbName).Collection(collectionName)
 
 	_, err = collection.InsertOne(context.Background(), inputVal)
 	if err != nil {
@@ -57,7 +79,7 @@ func RegisterClient(ctx *gin.Context) {
 
 	// create collection for the user
 
-	_, err = helpers.CollectionExistsOrCreate(client, inputVal.Id.Hex())
+	_, err = helpers.CollectionExistsOrCreate(Client, inputVal.Id.Hex())
 
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -97,7 +119,7 @@ func LoginClient(ctx *gin.Context) {
 	}
 
 	// Check if user exists in the database
-	collection := client.Database(dbName).Collection(collectionName)
+	collection := Client.Database(dbName).Collection(collectionName)
 
 	var user model.User
 	err := collection.FindOne(ctx, bson.M{"email": inputVal.Email}).Decode(&user)
@@ -127,12 +149,41 @@ func LoginClient(ctx *gin.Context) {
 		return
 	}
 
-	// Remove the password field from the response for security reasons
-	user.Password = ""
+	//* generate a jwt token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": user.Id.Hex(),
+		"exp": time.Now().Add(time.Hour * 24 * 30).Unix(),
+	})
 
-	// Return success message with user data (without password)
+	// Sign and get the complete encoded token as a string using the secret
+	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": "Failed to generate token",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// set cookie
+	ctx.SetSameSite(http.SameSiteLaxMode)
+
+	// change cookie domain to frontend url when in production
+	ctx.SetCookie("Authorization", tokenString, 3600*24*30, "/", "localhost", false, true)
+	ctx.JSON(http.StatusOK, gin.H{})
+}
+
+func Validate(ctx *gin.Context) {
+	user, ok := ctx.Get("user")
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"message": "Unauthorized",
+		})
+		return
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
-		"message": "Login successful",
-		"user":    user,
+		"data": user,
 	})
 }

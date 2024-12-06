@@ -49,3 +49,6 @@ test/
 
 # Node
 node_modules/
+
+
+*.exe

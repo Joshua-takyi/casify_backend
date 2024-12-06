@@ -18,7 +18,7 @@ const collectionName = "usersAuth"
 
 const invalidCredentials = "invalid credentials"
 
-var client *mongo.Client
+var Client *mongo.Client
 
 func ConnectToMongoDB() error {
 	// Load environment variables
@@ -42,13 +42,13 @@ func ConnectToMongoDB() error {
 
 	// Connect to MongoDB
 	var err error
-	client, err = mongo.Connect(ctx, clientOptions)
+	Client, err = mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to connect to MongoDB: %v", err)
 	}
 
 	// Verify the connection
-	err = client.Ping(ctx, nil)
+	err = Client.Ping(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to ping MongoDB: %v", err)
 	}
@@ -58,14 +58,14 @@ func ConnectToMongoDB() error {
 }
 
 func DisconnectFromMongoDB() error {
-	if client == nil {
+	if Client == nil {
 		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	err := client.Disconnect(ctx)
+	err := Client.Disconnect(ctx)
 	if err != nil {
 		return fmt.Errorf("error disconnecting from MongoDB: %v", err)
 	}

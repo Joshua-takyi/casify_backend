@@ -14,16 +14,18 @@ import (
 func Router() *gin.Engine {
 	r := gin.Default()
 
-	allowOrigins := []string{"http://localhost:3000"}
+	allowOrigins := []string{"http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"}
 	if prodOrigins := os.Getenv("ALLOWED_ORIGINS"); prodOrigins != "" {
-		allowOrigins = strings.Split(prodOrigins, ",")
+		allowOrigins = append(allowOrigins, strings.Split(prodOrigins, ",")...)
 	}
 
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     allowOrigins,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
-		AllowHeaders:     []string{"origin", "content-type", "accept", "authorization"},
 		AllowCredentials: true,
+		AllowOrigins:     allowOrigins,
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Type", "Authorization"},
+		AllowWildcard:    true,
 		MaxAge:           12 * time.Hour,
 	}))
 

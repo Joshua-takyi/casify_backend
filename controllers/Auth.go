@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -13,42 +12,31 @@ import (
 	"github.com/joshua/casify/model"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// RegisterClient handles the user registration process
 func RegisterClient(ctx *gin.Context) {
-	inputVal := model.User{}
+	var inputVal model.User
 
 	if err := ctx.ShouldBindJSON(&inputVal); err != nil {
+
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"message": "Invalid request body",
 			"error":   err.Error(),
 		})
 		return
 	}
-	// check if user exists
-	collection := Client.Database(dbName).Collection(collectionName)
 
-	filter := bson.M{"email": inputVal.Email}
-	var existingUser model.User
-	err := collection.FindOne(context.Background(), filter).Decode(&existingUser)
-	if err == nil {
+	if userExists(inputVal.Email) {
+
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"message": "User already exists",
-			"error":   "User already exists",
+			"error":   "A user with this email already exists.",
 		})
 		return
 	}
-	if err != mongo.ErrNoDocuments {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"message": "Failed to check existing user",
-			"error":   err.Error(),
-		})
-		return
-	}
-	// hash password
-	password := inputVal.Password
-	hashedPassword, err := helpers.HashPassword(password)
+
+	hashedPassword, err := helpers.HashPassword(inputVal.Password)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"message": "Failed to hash password",
@@ -56,16 +44,15 @@ func RegisterClient(ctx *gin.Context) {
 		})
 		return
 	}
+	inputVal.Password = hashedPassword // Update the password with the hashed one
+
 	inputVal.Id = primitive.NewObjectID()
-	inputVal.Password = hashedPassword
 	inputVal.TimeStamp.CreatedAt = time.Now()
 	inputVal.TimeStamp.UpdatedAt = time.Now()
-	inputVal.Role = "user"
+	inputVal.Role = "user" // Default role is "user"
 
-	// collection := Client.Database(dbName).Collection(collectionName)
+	if err := insertNewUser(inputVal); err != nil {
 
-	_, err = collection.InsertOne(context.Background(), inputVal)
-	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"message": "Failed to insert data",
 			"error":   err.Error(),
@@ -73,105 +60,103 @@ func RegisterClient(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"message": "Data inserted successfully",
-	})
-
-	// create collection for the user
-
-	_, err = helpers.CollectionExistsOrCreate(Client, inputVal.Id.Hex())
-
-	if err != nil {
+	if err := createUserCollection(inputVal.Id.Hex()); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"message": "Failed to create collection",
+			"message": "Failed to create user collection",
 			"error":   err.Error(),
 		})
 		return
 	}
-	// respond success
+
 	ctx.JSON(http.StatusCreated, gin.H{
-		"message":    "Collection created successfully",
+		"message":    "User registered successfully",
 		"collection": inputVal.Id.Hex(),
 	})
 }
 
-func LoginClient(ctx *gin.Context) {
+func userExists(email string) bool {
 
-	inputVal := model.LoginRequest{}
-
-	// Bind the request body to inputVal
-	if err := ctx.ShouldBindJSON(&inputVal); err != nil {
-		log.Printf("Error binding JSON: %v", err)
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"message": "Invalid request",
-			"error":   "Invalid request body",
-		})
-		return
-	}
-
-	// Ensure email and password are provided
-	if inputVal.Email == "" || inputVal.Password == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"message": invalidCredentials,
-			"error":   "Email and password are required",
-		})
-		return
-	}
-
-	// Check if user exists in the database
 	collection := Client.Database(dbName).Collection(collectionName)
+	filter := bson.M{"email": email}
+	var existingUser model.User
+	err := collection.FindOne(context.Background(), filter).Decode(&existingUser)
+	return err == nil
+}
 
+func insertNewUser(inputVal model.User) error {
+	collection := Client.Database(dbName).Collection(collectionName)
+	_, err := collection.InsertOne(context.Background(), inputVal)
+	return err
+}
+
+func createUserCollection(userID string) error {
+	_, err := helpers.CollectionExistsOrCreate(Client, userID)
+	return err
+}
+
+func LoginClient(ctx *gin.Context) {
+	// Parse user input
+	var inputVal model.LoginRequest
+	if err := ctx.ShouldBindJSON(&inputVal); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request", "error": err.Error()})
+		return
+	}
+
+	// Validate input
+	if inputVal.Email == "" || inputVal.Password == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Email and password are required"})
+		return
+	}
+
+	// Check if user exists
+	collection := Client.Database(dbName).Collection(collectionName)
 	var user model.User
 	err := collection.FindOne(ctx, bson.M{"email": inputVal.Email}).Decode(&user)
-
-	// If no user is found, return an error message
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			ctx.JSON(http.StatusUnauthorized, gin.H{
-				"message": invalidCredentials,
-				"error":   "Invalid email or password",
-			})
-		} else {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"message": "Authentication error",
-				"error":   "An unexpected error occurred",
-			})
-		}
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	// Compare the input password with the stored hashed password
+	// Verify password
 	if !helpers.ComparePassword(user.Password, inputVal.Password) {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"message": invalidCredentials,
-			"error":   "Invalid email or password",
-		})
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid email or password"})
 		return
 	}
 
-	//* generate a jwt token
+	// Generate JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": user.Id.Hex(),
 		"exp": time.Now().Add(time.Hour * 24 * 30).Unix(),
 	})
 
-	// Sign and get the complete encoded token as a string using the secret
 	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
-
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"message": "Failed to generate token",
-			"error":   err.Error(),
-		})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate token"})
 		return
 	}
 
-	// set cookie
-	ctx.SetSameSite(http.SameSiteLaxMode)
+	// Set cookie
+	ctx.SetCookie(
+		"Authorization", // Cookie name
+		tokenString,     // Cookie value (JWT token)
+		3600*24*30,      // Expiry (30 days in seconds)
+		"/",             // Path
+		"localhost",     // Domain (for local development)
+		false,           // Secure (false for local development)
+		false,           // HttpOnly (false for debugging)
+	)
 
-	// change cookie domain to frontend url when in production
-	ctx.SetCookie("Authorization", tokenString, 3600*24*30, "/", "localhost", false, true)
-	ctx.JSON(http.StatusOK, gin.H{})
+	// Set Authorization header as well
+	ctx.Header("Authorization", "Bearer "+tokenString)
+
+	// // Debug logging
+	// fmt.Printf("Setting cookie: Authorization=%s\n", tokenString)
+
+	// Send success response with token in body
+	ctx.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"token":  tokenString,
+	})
 }
 
 func Validate(ctx *gin.Context) {
@@ -182,7 +167,7 @@ func Validate(ctx *gin.Context) {
 		})
 		return
 	}
-
+	// jwt token
 	ctx.JSON(http.StatusOK, gin.H{
 		"data": user,
 	})

@@ -8,11 +8,9 @@ import (
 
 type User struct {
 	Id        primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	FirstName string             `json:"first_name,omitempty" bson:"first_name,omitempty" binding:"required"`
-	LastName  string             `json:"last_name,omitempty" bson:"last_name,omitempty" binding:"required"`
 	Email     string             `json:"email,omitempty" bson:"email,omitempty" binding:"required,email"`
 	Password  string             `json:"password,omitempty" bson:"password,omitempty" binding:"required"`
-	Role      string             `json:"role,omitempty" bson:"role,omitempty" binding:"required,oneof=admin user"`
+	Role      string             `json:"role,omitempty" bson:"role,omitempty"`
 	TimeStamp TimeStamp          `json:"time_stamp,omitempty" bson:"time_stamp,omitempty"`
 }
 

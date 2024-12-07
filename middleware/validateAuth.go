@@ -51,7 +51,7 @@ func ValidateAuth(ctx *gin.Context) {
 
 		// find the user sub
 		if controllers.Client == nil {
-			if controllers.ConnectToMongoDB() != nil {
+			if err := controllers.ConnectToMongoDB(); err != nil {
 				ctx.AbortWithStatus(http.StatusUnauthorized)
 			}
 		}
